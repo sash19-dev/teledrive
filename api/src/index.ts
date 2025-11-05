@@ -32,17 +32,17 @@ const isProduction = process.env.ENV === 'production'
   return this.toString()
 }
 
+const curl = cURL({ attach: true })
+
+const app = express()
+
 // Initialize Redis connection
 try {
   Redis.connect()
   logger.info('Redis connection initialized')
-} catch (error) {
-  logger.warn('Redis connection failed, using in-memory cache', { error: serializeError(error) })
+} catch (error: any) {
+  logger.warn('Redis connection failed, using in-memory cache', { error: error?.message || String(error) })
 }
-
-const curl = cURL({ attach: true })
-
-const app = express()
 
 app.set('trust proxy', 1)
 
