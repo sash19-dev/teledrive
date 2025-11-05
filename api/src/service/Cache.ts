@@ -5,7 +5,7 @@ export class Redis {
   private redis: IOredis
 
   private constructor() {
-    this.redis = process.env.REDIS_URI ? new IORedis(process.env.REDIS_URI) : null
+    this.redis = process.env.REDIS_URL ? new IORedis(process.env.REDIS_URL) : null
   }
 
   public static connect(): Redis {
