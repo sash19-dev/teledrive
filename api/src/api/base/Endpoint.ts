@@ -1,5 +1,6 @@
 import { NextFunction, Request, RequestHandler, Response, Router } from 'express'
 import { serializeError } from 'serialize-error'
+import logger from '../../utils/Logger'
 
 interface RouteOptions {
   path?: string,
@@ -79,9 +80,11 @@ export const Endpoint = {
             req.tg?.connect()
             return await execute()
           }
-          if (process.env.ENV !== 'production') {
-            console.error('RequestWrapper', error)
-          }
+          logger.error('RequestWrapper error', {
+            error: error.message,
+            stack: error.stack,
+            path: req.path
+          })
           req.tg?.disconnect()
           const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599
           return next(error.code ? {
@@ -132,9 +135,12 @@ export const Endpoint = {
               req.tg?.connect()
               return await execute()
             }
-            if (process.env.ENV !== 'production') {
-              console.error('handler', error.message)
-            }
+            logger.error('Handler error', {
+              error: error.message,
+              stack: error.stack,
+              path: req.path,
+              method: req.method
+            })
             req.tg?.disconnect()
             const isValidCode = error.code && Number(error.code) > 99 && Number(error.code) < 599
             return next(error.code ? {

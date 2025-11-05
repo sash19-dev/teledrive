@@ -1,4 +1,5 @@
 import IORedis, { Redis as IOredis } from 'ioredis'
+import logger from '../utils/Logger'
 
 export class Redis {
   private static client: Redis
@@ -12,9 +13,9 @@ export class Redis {
     if (!this.client) {
       this.client = new Redis()
     }
-    this.client.redis?.on('connect', () => console.log('redis: connected'))
-    this.client.redis?.on('ready', () => console.log('redis: ready'))
-    this.client.redis?.on('error', console.error)
+    this.client.redis?.on('connect', () => logger.info('Redis: connected'))
+    this.client.redis?.on('ready', () => logger.info('Redis: ready'))
+    this.client.redis?.on('error', (error) => logger.error('Redis error', { error }))
     return this.client
   }
 

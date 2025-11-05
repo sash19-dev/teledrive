@@ -1,6 +1,19 @@
 import axios from 'axios'
 import { RETRY_COUNT } from './Constant'
-export const apiUrl = `${localStorage.getItem('API_URL') || process.env.REACT_APP_API_URL || ''}/api/v1`
+// Get API URL - prioritize localStorage, then env var, then current origin
+const getApiUrl = () => {
+  const stored = localStorage.getItem('API_URL')
+  const envUrl = process.env.REACT_APP_API_URL
+  const currentOrigin = window.location.origin
+
+  // If no API URL is set, use current origin (same domain)
+  const baseUrl = stored || envUrl || currentOrigin
+
+  // Remove trailing slash and add /api/v1
+  return `${baseUrl.replace(/\/$/, '')}/api/v1`
+}
+
+export const apiUrl = getApiUrl()
 export const req = axios.create({
   baseURL: apiUrl,
   withCredentials: true

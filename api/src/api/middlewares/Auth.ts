@@ -6,17 +6,21 @@ import { StringSession } from 'telegram/sessions'
 import { prisma } from '../../model'
 import { Redis } from '../../service/Cache'
 import { API_JWT_SECRET, CONNECTION_RETRIES, TG_CREDS } from '../../utils/Constant'
+import logger from '../../utils/Logger'
 
 export async function Auth(req: Request, _: Response, next: NextFunction): Promise<any> {
   const authkey = (req.headers.authorization || req.cookies.authorization)?.replace(/^Bearer\ /gi, '')
   if (!authkey) {
+    logger.warn('Auth middleware: No auth key provided', { path: req.path, ip: req.ip })
     throw { status: 401, body: { error: 'Auth key is required' } }
   }
 
   let data: { session: string }
   try {
     data = verify(authkey, API_JWT_SECRET) as { session: string }
+    logger.debug('Auth middleware: Token verified', { path: req.path })
   } catch (error) {
+    logger.warn('Auth middleware: Invalid token', { path: req.path, error: error.message })
     throw { status: 401, body: { error: 'Access token is invalid' } }
   }
 
@@ -27,10 +31,19 @@ export async function Auth(req: Request, _: Response, next: NextFunction): Promi
       useWSS: false,
       ...process.env.ENV === 'production' ? { baseLogger: new Logger(LogLevel.NONE) } : {}
     })
+    logger.debug('Auth middleware: Telegram client created', { path: req.path })
   } catch (error) {
+    logger.error('Auth middleware: Failed to create Telegram client', { path: req.path, error: error.message })
     throw { status: 401, body: { error: 'Invalid key' } }
   }
-  await req.tg.connect()
+
+  try {
+    await req.tg.connect()
+    logger.debug('Auth middleware: Telegram client connected', { path: req.path })
+  } catch (error) {
+    logger.error('Auth middleware: Failed to connect Telegram client', { path: req.path, error: error.message })
+    throw { status: 500, body: { error: 'Failed to connect to Telegram' } }
+  }
   req.authKey = authkey
 
   const [userAuth, user] = await Redis.connect().getFromCacheFirst(`auth:${authkey}`, async () => {

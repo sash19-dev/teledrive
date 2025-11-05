@@ -1,5 +1,6 @@
 import 'source-map-support/register'
-require('dotenv').config({ path: '.env' })
+import dotenv from 'dotenv'
+dotenv.config({ path: '.env' })
 
 import axios from 'axios'
 import cookieParser from 'cookie-parser'
@@ -23,13 +24,21 @@ import serverless from 'serverless-http'
 import { API } from './api'
 import { Redis } from './service/Cache'
 import { markdownSafe } from './utils/StringParser'
+import logger from './utils/Logger'
+
+const isProduction = process.env.ENV === 'production'
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString()
 }
 
-
-Redis.connect()
+// Initialize Redis connection
+try {
+  Redis.connect()
+  logger.info('Redis connection initialized')
+} catch (error) {
+  logger.warn('Redis connection failed, using in-memory cache', { error: serializeError(error) })
+}
 
 const curl = cURL({ attach: true })
 
@@ -37,23 +46,75 @@ const app = express()
 
 app.set('trust proxy', 1)
 
+// CORS configuration - allow specific origins in production, all in development
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : isProduction
+    ? [process.env.RAILWAY_PUBLIC_DOMAIN || process.env.PUBLIC_URL || '*']
+    : [/.*/]
+
 app.use(cors({
   credentials: true,
-  origin: [
-    /.*/
-  ]
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true)
+
+    // Check if origin matches allowed patterns
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed || origin.endsWith(allowed)
+      }
+      return allowed.test(origin)
+    })
+
+    if (isAllowed || !isProduction) {
+      callback(null, true)
+    } else {
+      logger.warn(`CORS blocked origin: ${origin}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  }
 }))
 // app.use(compression())
 app.use(json({ limit: '100mb' }))
 app.use(urlencoded({ extended: true, limit: '100mb' }))
 app.use(raw({ limit: '100mb' }))
 app.use(cookieParser())
-if (process.env.ENV !== 'production') {
-  app.use(morgan('tiny'))
-}
+// Always use morgan in production, but with different format
+app.use(morgan(isProduction ? 'combined' : 'dev', {
+  stream: {
+    write: (message: string) => logger.info(message.trim())
+  }
+}))
 app.use(curl)
 
-app.get('/ping', (_, res) => res.send({ pong: true }))
+// Request logging middleware
+app.use((req, res, next) => {
+  logger.debug(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    query: req.query,
+    body: req.method !== 'GET' ? (req.body ? Object.keys(req.body) : []) : undefined
+  })
+  next()
+})
+
+app.get('/ping', (_, res) => {
+  logger.debug('Health check: /ping')
+  res.send({ pong: true, timestamp: new Date().toISOString() })
+})
+
+app.get('/api/health', (_, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: !!process.env.DATABASE_URL,
+    redis: !!process.env.REDIS_URL,
+    telegram: !!process.env.TG_API_ID && !!process.env.TG_API_HASH
+  }
+  logger.debug('Health check: /api/health', health)
+  res.send(health)
+})
 app.get('/security.txt', (_, res) => {
   res.setHeader('Content-Type', 'text/plain')
   res.send('Contact: security@teledriveapp.com\nPreferred-Languages: en, id')
@@ -62,9 +123,16 @@ app.use('/api', API)
 
 // error handler
 app.use(async (err: { status?: number, body?: Record<string, any> }, req: Request, res: Response, __: NextFunction) => {
-  if (process.env.ENV !== 'production') {
-    console.error(err)
-  }
+  const status = err.status || 500
+  const errorMessage = err.body?.error || (err as any).message || 'Unknown error'
+
+  logger.error(`Error ${status}: ${errorMessage}`, {
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    error: serializeError(err),
+    stack: (err as any).stack
+  })
   if ((err.status || 500) >= 500) {
     if (process.env.TG_BOT_TOKEN && (process.env.TG_BOT_ERROR_REPORT_ID || process.env.TG_BOT_OWNER_ID)) {
       try {
@@ -74,9 +142,7 @@ app.use(async (err: { status?: number, body?: Record<string, any> }, req: Reques
           text: `🔥 *${markdownSafe(err.body.error  || (err as any).message || 'Unknown error')}*\n\n\`[${err.status || 500}] ${markdownSafe(req.protocol + '://' + req.get('host') + req.originalUrl)}\`\n\n\`\`\`\n${JSON.stringify(serializeError(err), null, 2)}\n\`\`\`\n\n\`\`\`\n${req['_curl']}\n\`\`\``
         })
       } catch (error) {
-        if (process.env.ENV !== 'production') {
-          console.error(error)
-        }
+        logger.error('Failed to send error report to Telegram', { error: serializeError(error) })
         // ignore
       }
     }
@@ -97,9 +163,32 @@ app.use((req: Request, res: Response) => {
   }
 })
 
-app.listen(process.env.PORT || 4000, () => console.log(`Running at :${process.env.PORT || 4000}...`))
+const port = process.env.PORT || 4000
 
-console.log(listEndpoints(app))
+// Add startup logging before server starts
+logger.info('='.repeat(50))
+logger.info('🚀 Starting TeleDrive API Server')
+logger.info('='.repeat(50))
+logger.info(`Environment: ${process.env.ENV || 'development'}`)
+logger.info(`Port: ${port}`)
+logger.info(`Node Version: ${process.version}`)
+logger.info(`Database: ${process.env.DATABASE_URL ? '✅ Configured' : '❌ Not configured'}`)
+logger.info(`Redis: ${process.env.REDIS_URL ? '✅ Configured' : '⚠️ Using in-memory'}`)
+logger.info(`Telegram API: ${process.env.TG_API_ID ? '✅ Configured' : '❌ Not configured'}`)
+logger.info(`Public URL: ${process.env.RAILWAY_PUBLIC_DOMAIN || process.env.PUBLIC_URL || 'Not set'}`)
+logger.info('='.repeat(50))
+
+app.listen(port, () => {
+  logger.info(`✅ Server successfully started on port ${port}`)
+  logger.info(`📡 API available at: http://localhost:${port}/api`)
+  logger.info(`🔍 Health check: http://localhost:${port}/ping`)
+})
+
+// Log all registered endpoints
+if (!isProduction) {
+  const endpoints = listEndpoints(app)
+  logger.debug('Registered endpoints:', endpoints)
+}
 
 module.exports = app
 module.exports.handler = serverless(app)

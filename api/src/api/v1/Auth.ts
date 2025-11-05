@@ -13,6 +13,7 @@ import { API_JWT_SECRET, CONNECTION_RETRIES, COOKIE_AGE, FILES_JWT_SECRET, TG_CR
 import { Endpoint } from '../base/Endpoint'
 import { TGClient } from '../middlewares/TGClient'
 import { TGSessionAuth } from '../middlewares/TGSessionAuth'
+import logger from '../../utils/Logger'
 
 @Endpoint.API()
 export class Auth {
@@ -21,10 +22,17 @@ export class Auth {
   public async sendCode(req: Request, res: Response): Promise<any> {
     const { phoneNumber } = req.body
     if (!phoneNumber) {
+      logger.warn('sendCode: Phone number missing', { ip: req.ip })
       throw { status: 400, body: { error: 'Phone number is required' } }
     }
 
-    await req.tg.connect()
+    logger.info('sendCode: Attempting to send code', { phoneNumber: phoneNumber?.substring(0, 4) + '****', ip: req.ip })
+    try {
+      await req.tg.connect()
+    } catch (error) {
+      logger.error('sendCode: Failed to connect to Telegram', { error: error.message, ip: req.ip })
+      throw { status: 500, body: { error: 'Failed to connect to Telegram service' } }
+    }
     const { phoneCodeHash, timeout } = await req.tg.invoke(new Api.auth.SendCode({
       ...TG_CREDS,
       phoneNumber,
@@ -61,12 +69,26 @@ export class Auth {
     const { phoneNumber, phoneCode, phoneCodeHash, password, invitationCode } = req.body
     if ((!phoneNumber || !phoneCode || !phoneCodeHash) && !password) {
       if (!password) {
+        logger.warn('login: Missing password', { ip: req.ip })
         throw { status: 400, body: { error: 'Password is required' } }
       }
+      logger.warn('login: Missing required fields', { ip: req.ip, hasPhone: !!phoneNumber, hasCode: !!phoneCode, hasHash: !!phoneCodeHash })
       throw { status: 400, body: { error: 'Phone number, phone code, and phone code hash are required' } }
     }
 
-    await req.tg.connect()
+    logger.info('login: Attempting login', {
+      phoneNumber: phoneNumber?.substring(0, 4) + '****',
+      hasCode: !!phoneCode,
+      hasPassword: !!password,
+      ip: req.ip
+    })
+
+    try {
+      await req.tg.connect()
+    } catch (error) {
+      logger.error('login: Failed to connect to Telegram', { error: error.message, ip: req.ip })
+      throw { status: 500, body: { error: 'Failed to connect to Telegram service' } }
+    }
     let signIn: any
     if (password) {
       const data = await req.tg.invoke(new Api.account.GetPassword())
@@ -77,8 +99,11 @@ export class Auth {
     }
     const userAuth = signIn['user']
     if (!userAuth) {
+      logger.error('login: User not found after sign in', { ip: req.ip })
       throw { status: 400, body: { error: 'User not found/authorized' } }
     }
+
+    logger.debug('login: User authenticated', { userId: userAuth.id, ip: req.ip })
 
     let user = await prisma.users.findFirst({ where: { tg_id: userAuth.id.toString() } })
     const config = await prisma.config.findFirst()
