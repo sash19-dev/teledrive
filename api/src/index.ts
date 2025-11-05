@@ -28,9 +28,15 @@ import logger from './utils/Logger'
 
 const isProduction = process.env.ENV === 'production'
 
-(BigInt.prototype as any).toJSON = function () {
-  return this.toString()
-}
+// Extend BigInt prototype for JSON serialization
+Object.defineProperty(BigInt.prototype, 'toJSON', {
+  value: function (): string {
+    return this.toString()
+  },
+  writable: true,
+  enumerable: false,
+  configurable: true
+})
 
 const curl = cURL({ attach: true })
 
