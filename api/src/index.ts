@@ -95,7 +95,7 @@ app.use(morgan(isProduction ? 'combined' : 'dev', {
 app.use(curl)
 
 // Request logging middleware
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   logger.debug(`${req.method} ${req.path}`, {
     ip: req.ip,
     userAgent: req.get('user-agent'),

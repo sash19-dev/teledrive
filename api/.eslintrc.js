@@ -68,7 +68,7 @@ module.exports = {
         'argsIgnorePattern': '^\_.*$',
       }
     ],
-    '@typescript-eslint/no-extra-parens': 'error',
+    '@typescript-eslint/no-extra-parens': 'off',
     '@typescript-eslint/brace-style': 'error',
     '@typescript-eslint/no-use-before-define': 'off',
     '@typescript-eslint/no-explicit-any': 'off',

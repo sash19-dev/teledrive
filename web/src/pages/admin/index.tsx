@@ -174,13 +174,13 @@ const Admin: FC<Props> = ({ me, errorMe }) => {
                   title: 'Role',
                   dataIndex: 'role',
                   key: 'role',
-                  render: (value: string, record) => <>{<Tag color="blue">{record.role}</Tag>}</>
+                  render: (_value: string, record) => <>{<Tag color="blue">{record.role}</Tag>}</>
                 },
                 {
                   title: 'Username',
                   dataIndex: 'username',
                   key: 'username',
-                  render: (value: string, record) => <>{value}</>
+                  render: (value: string, _record) => <>{value}</>
                 },
                 {
                   title: 'Name',
