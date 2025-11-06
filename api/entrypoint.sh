@@ -9,11 +9,17 @@ until npx prisma db execute --stdin <<<'SELECT 1' >/dev/null 2>&1; do
     echo "❌ Database not reachable after $ATTEMPTS attempts. Exiting."
     exit 1
   fi
+  echo "⏳ Waiting for database... (attempt $ATTEMPTS/30)"
   sleep 2
 done
 
 echo "✅ Database reachable! Running migrations..."
-npx prisma migrate deploy
+cd /app/api || cd api
+npx prisma migrate deploy || {
+  echo "⚠️ Migration failed, trying to resolve..."
+  npx prisma migrate resolve --applied 20220420012853_init || true
+  npx prisma migrate deploy
+}
 
-echo "🚀 Starting the API..."
+echo "✅ Migrations completed! Starting the API..."
 exec node dist/index.js

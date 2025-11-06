@@ -50,6 +50,23 @@ try {
   logger.warn('Redis connection failed, using in-memory cache', { error: error?.message || String(error) })
 }
 
+// Verify database connection and tables exist (async check)
+import { prisma } from './model'
+;(async () => {
+  try {
+    await prisma.$connect()
+    logger.info('Database connection verified')
+    // Try to access users table to verify migrations ran
+    await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`.catch(() => {
+      logger.error('⚠️ WARNING: Database tables do not exist! Migrations may not have run.')
+      logger.error('⚠️ Please run: npx prisma migrate deploy')
+    })
+  } catch (error: any) {
+    logger.error('Database connection failed', { error: error?.message || String(error) })
+    logger.error('⚠️ CRITICAL: Cannot connect to database. Please check DATABASE_URL')
+  }
+})()
+
 app.set('trust proxy', 1)
 
 // CORS configuration - allow specific origins in production, all in development
