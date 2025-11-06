@@ -15,6 +15,7 @@ import { prisma } from '../../model'
 import { Redis } from '../../service/Cache'
 import { CACHE_FILES_LIMIT, CONNECTION_RETRIES, FILES_JWT_SECRET, TG_CREDS } from '../../utils/Constant'
 import { buildSort } from '../../utils/FilterQuery'
+import logger from '../../utils/Logger'
 import { Endpoint } from '../base/Endpoint'
 import { Auth, AuthMaybe } from '../middlewares/Auth'
 
@@ -394,23 +395,67 @@ export class Files {
   @Endpoint.GET('/:id', { middlewares: [AuthMaybe] })
   public async retrieve(req: Request, res: Response): Promise<any> {
     const { id } = req.params
-    const { password } = req.query
+    const { password, raw, dl } = req.query
+
+    logger.debug('File retrieve request', {
+      fileId: id,
+      hasUser: !!req.user,
+      userId: req.user?.id,
+      raw: !!raw,
+      dl: !!dl,
+      ip: req.ip
+    })
+
     const file = await prisma.files.findUnique({
       where: { id }
     })
 
+    if (!file) {
+      logger.warn('File not found in database', { fileId: id, ip: req.ip })
+      throw { status: 404, body: { error: 'File not found' } }
+    }
+
     const parent = file?.parent_id ? await prisma.files.findUnique({
       where: { id: file.parent_id }
     }) : null
-    if (!file || file.user_id !== req.user?.id && !file.sharing_options?.includes('*') && !file.sharing_options?.includes(req.user?.username)) {
-      if (!parent?.sharing_options?.includes(req.user?.username) && !parent?.sharing_options?.includes('*')) {
-        throw { status: 404, body: { error: 'File not found' } }
-      }
+
+    // Check if user has access to the file
+    const isOwner = req.user && file.user_id === req.user.id
+    const isPublicFile = file.sharing_options?.includes('*')
+    const isSharedWithUser = req.user && file.sharing_options?.includes(req.user?.username)
+    const isParentPublic = parent?.sharing_options?.includes('*')
+    const isParentSharedWithUser = req.user && parent?.sharing_options?.includes(req.user?.username)
+
+    logger.debug('File access check', {
+      fileId: id,
+      isOwner,
+      isPublicFile,
+      isSharedWithUser,
+      isParentPublic,
+      isParentSharedWithUser,
+      sharingOptions: file.sharing_options
+    })
+
+    // Allow access if:
+    // 1. User owns the file, OR
+    // 2. File is public, OR
+    // 3. File is shared with user, OR
+    // 4. Parent is public or shared with user
+    if (!isOwner && !isPublicFile && !isSharedWithUser && !isParentPublic && !isParentSharedWithUser) {
+      logger.warn('File access denied', {
+        fileId: id,
+        userId: req.user?.id,
+        fileOwner: file.user_id,
+        sharingOptions: file.sharing_options,
+        ip: req.ip
+      })
+      throw { status: 404, body: { error: 'File not found' } }
     }
     file.signed_key = file.signed_key || parent?.signed_key
 
+    // Handle password protection - skip if password is null/undefined or empty string
     if (file.password && req.user?.id !== file.user_id) {
-      if (!password) {
+      if (!password || password === 'null' || password === 'undefined' || password === '') {
         throw { status: 400, body: { error: 'Unauthorized' } }
       }
       if (!compareSync(password as string, file.password)) {
@@ -440,9 +485,40 @@ export class Files {
       files[0].signed_key = file.signed_key = file.signed_key || parent?.signed_key
     }
 
+    // Initialize Telegram session if needed (for downloading from Telegram)
     if (!req.user || file.user_id !== req.user?.id) {
-      await Files.initiateSessionTG(req, files)
-      await req.tg.connect()
+      // If signed_key exists, use it to create session from file owner
+      if (files[0].signed_key) {
+        try {
+          await Files.initiateSessionTG(req, files)
+          await req.tg.connect()
+        } catch (error: any) {
+          logger.error('Failed to initiate Telegram session from signed_key', {
+            error: error?.message,
+            fileId: file.id
+          })
+          // If signed_key fails, try to get owner's session
+          const owner = await prisma.users.findUnique({ where: { id: file.user_id } })
+          if (!owner) {
+            throw { status: 404, body: { error: 'File owner not found' } }
+          }
+          // For now, just log the error - signed_key should exist for shared files
+          throw { status: 401, body: { error: 'Cannot access file: missing session key' } }
+        }
+      } else {
+        // No signed_key - this shouldn't happen for shared files, but handle gracefully
+        logger.warn('File accessed without signed_key', { fileId: file.id, userId: file.user_id })
+        // Try to create anonymous session as fallback
+        if (!req.tg) {
+          const session = new StringSession('')
+          req.tg = new TelegramClient(session, TG_CREDS.apiId, TG_CREDS.apiHash, {
+            connectionRetries: CONNECTION_RETRIES,
+            useWSS: false,
+            ...process.env.ENV === 'production' ? { baseLogger: new Logger(LogLevel.NONE) } : {}
+          })
+        }
+        await req.tg.connect()
+      }
     }
 
     return await Files.download(req, res, files)
@@ -1172,7 +1248,7 @@ export class Files {
       return res.send({ files })
     }
 
-    console.log(req.headers.range)
+    logger.debug('File download request', { range: req.headers.range, fileId: files[0]?.id })
 
     let cancel = false
     req.on('close', () => cancel = true)
@@ -1282,7 +1358,12 @@ export class Files {
             if (cancel) {
               throw { status: 422, body: { error: 'canceled' } }
             } else {
-              console.log(`${chat['messages'][0].id} ${downloaded}/${chat['messages'][0].media.document.size.value} (${downloaded / Number(totalFileSize) * 100 + '%'})`)
+              logger.debug('File download progress', {
+                messageId: chat['messages'][0].id,
+                downloaded,
+                total: chat['messages'][0].media.document.size.value,
+                percent: (downloaded / Number(totalFileSize) * 100).toFixed(2) + '%'
+              })
               try {
                 appendFileSync(filename('process-'), buffer)
               } catch (error) {
@@ -1292,7 +1373,12 @@ export class Files {
             }
           },
           close: () => {
-            console.log(`${chat['messages'][0].id} ${downloaded}/${chat['messages'][0].media.document.size.value} (${downloaded / Number(totalFileSize) * 100 + '%'})`, '-end-')
+            logger.debug('File download completed', {
+              messageId: chat['messages'][0].id,
+              downloaded,
+              total: chat['messages'][0].media.document.size.value,
+              percent: (downloaded / Number(totalFileSize) * 100).toFixed(2) + '%'
+            })
             if (countFiles++ >= files.length) {
               try {
                 const { size } = statSync(filename('process-'))
@@ -1311,8 +1397,12 @@ export class Files {
       })
       try {
         await getData()
-      } catch (error) {
-        console.log(error)
+      } catch (error: any) {
+        logger.error('File download error', {
+          error: error?.message || String(error),
+          fileId: file.id,
+          messageId: file.message_id
+        })
       }
     }
     usage = await prisma.usages.update({

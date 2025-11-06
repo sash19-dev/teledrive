@@ -5,7 +5,6 @@ dotenv.config({ path: '.env' })
 import axios from 'axios'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
-// import compression from 'compression'
 import { cURL } from 'curly-express'
 import express, {
   json,
@@ -19,6 +18,9 @@ import express, {
 import listEndpoints from 'express-list-endpoints'
 import morgan from 'morgan'
 import path from 'path'
+import rateLimit from 'express-rate-limit'
+import compression from 'compression'
+import helmet from 'helmet'
 import { serializeError } from 'serialize-error'
 import serverless from 'serverless-http'
 import { API } from './api'
@@ -71,6 +73,45 @@ import { prisma } from './model'
 
 app.set('trust proxy', 1)
 
+// Security headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: isProduction ? undefined : false, // Disable in dev for easier debugging
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow file downloads from different origins
+  hsts: isProduction ? {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  } : false
+}))
+
+// Compression middleware for better performance
+app.use(compression({
+  filter: (req, res) => {
+    // Don't compress if client doesn't support it
+    if (req.headers['x-no-compression']) {
+      return false
+    }
+    // Use compression for all other requests
+    return compression.filter(req, res)
+  },
+  level: 6 // Balance between compression ratio and CPU usage
+}))
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isProduction ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/ping' || req.path === '/api/health'
+  }
+})
+
+app.use('/api', limiter)
+
 // CORS configuration - allow specific origins in production, all in development
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -100,7 +141,6 @@ app.use(cors({
     }
   }
 }))
-// app.use(compression())
 app.use(json({ limit: '100mb' }))
 app.use(urlencoded({ extended: true, limit: '100mb' }))
 app.use(raw({ limit: '100mb' }))
