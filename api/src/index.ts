@@ -59,7 +59,7 @@ import { prisma } from './model'
     await prisma.$connect()
     logger.info('Database connection verified')
     // Try to access users table to verify migrations ran
-    await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`.catch(async (error: any) => {
+    await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`.catch(async (_error: any) => {
       logger.error('⚠️ CRITICAL: Database tables do not exist! Migrations may not have run.')
       logger.error('⚠️ This should have been handled by entrypoint.sh or start script.')
       logger.error('⚠️ Please check Railway logs for migration errors.')
@@ -102,8 +102,6 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: isProduction ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
   message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
   skip: (req) => {
     // Skip rate limiting for health checks
     return req.path === '/ping' || req.path === '/api/health'
