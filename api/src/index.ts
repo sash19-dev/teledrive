@@ -75,7 +75,46 @@ app.set('trust proxy', 1)
 
 // Security headers with Helmet
 app.use(helmet({
-  contentSecurityPolicy: isProduction ? undefined : false, // Disable in dev for easier debugging
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'", // Required for React and inline scripts
+        "'unsafe-eval'", // Required for React development/build
+        "https:", // Allow external scripts
+      ],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'", // Required for inline styles and React
+        "https:", // Allow external stylesheets
+      ],
+      imgSrc: [
+        "'self'",
+        "data:", // Allow data URIs for images
+        "blob:", // Allow blob URIs
+        "https:", // Allow external images
+      ],
+      fontSrc: [
+        "'self'",
+        "data:", // Allow data URIs for fonts
+        "https:", // Allow external fonts
+      ],
+      connectSrc: [
+        "'self'",
+        "https:", // Allow API calls to external domains
+        "wss:", // Allow WebSocket connections
+        "ws:", // Allow WebSocket connections
+      ],
+      mediaSrc: [
+        "'self'",
+        "blob:", // Allow blob URIs for media
+        "https:", // Allow external media
+      ],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: isProduction ? [] : null, // Only in production
+    },
+  },
   crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow file downloads from different origins
   hsts: isProduction ? {
     maxAge: 31536000,
