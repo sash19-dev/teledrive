@@ -425,6 +425,9 @@ export class Files {
     const isSharedWithUser = req.user && file.sharing_options?.includes(req.user?.username)
     const isParentPublic = parent?.sharing_options?.includes('*')
     const isParentSharedWithUser = req.user && parent?.sharing_options?.includes(req.user?.username)
+    // NEW: Allow access if file has link_id (shared via direct link) or has sharing_options set
+    const hasLinkId = !!file.link_id
+    const hasSharingOptions = file.sharing_options && file.sharing_options.length > 0
 
     logger.debug('File access check', {
       fileId: id,
@@ -433,20 +436,25 @@ export class Files {
       isSharedWithUser,
       isParentPublic,
       isParentSharedWithUser,
+      hasLinkId,
+      hasSharingOptions,
       sharingOptions: file.sharing_options
     })
 
     // Allow access if:
     // 1. User owns the file, OR
-    // 2. File is public, OR
+    // 2. File is public (has '*' in sharing_options), OR
     // 3. File is shared with user, OR
-    // 4. Parent is public or shared with user
-    if (!isOwner && !isPublicFile && !isSharedWithUser && !isParentPublic && !isParentSharedWithUser) {
+    // 4. Parent is public or shared with user, OR
+    // 5. File has link_id (shared via direct link), OR
+    // 6. File has sharing_options set (any sharing means it's accessible)
+    if (!isOwner && !isPublicFile && !isSharedWithUser && !isParentPublic && !isParentSharedWithUser && !hasLinkId && !hasSharingOptions) {
       logger.warn('File access denied', {
         fileId: id,
         userId: req.user?.id,
         fileOwner: file.user_id,
         sharingOptions: file.sharing_options,
+        hasLinkId,
         ip: req.ip
       })
       throw { status: 404, body: { error: 'File not found' } }
