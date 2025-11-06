@@ -58,7 +58,7 @@ export class Messages {
         users: []
       } })
     }
-    const messages = await req.tg.invoke(new Api.channels.GetSponsoredMessages({ channel: peer }))
+    const messages = await req.tg.invoke(new (Api.channels as any).GetSponsoredMessages({ channel: peer }))
     return res.send({ messages })
   }
 
@@ -76,7 +76,7 @@ export class Messages {
     } else {
       return res.status(202).send({ accepted: true })
     }
-    const accepted = await req.tg.invoke(new Api.channels.ViewSponsoredMessage({
+    const accepted = await req.tg.invoke(new (Api.channels as any).ViewSponsoredMessage({
       channel: peer, randomId: Buffer.from(randomId)
     }))
     return res.status(202).send({ accepted })

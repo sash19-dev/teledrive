@@ -33,7 +33,7 @@ export class Auth {
       logger.error('sendCode: Failed to connect to Telegram', { error: error.message, ip: req.ip })
       throw { status: 500, body: { error: 'Failed to connect to Telegram service' } }
     }
-    const { phoneCodeHash, timeout } = await req.tg.invoke(new Api.auth.SendCode({
+    const result = await req.tg.invoke(new Api.auth.SendCode({
       ...TG_CREDS,
       phoneNumber,
       settings: new Api.CodeSettings({
@@ -41,7 +41,9 @@ export class Auth {
         currentNumber: true,
         allowAppHash: true,
       })
-    }))
+    })) as any
+    const phoneCodeHash = result.phoneCodeHash
+    const timeout = result.timeout
     const session = req.tg.session.save()
     const accessToken = sign({ session }, API_JWT_SECRET, { expiresIn: '3h' })
     return res.cookie('authorization', `Bearer ${accessToken}`)
@@ -56,8 +58,10 @@ export class Auth {
     }
 
     await req.tg.connect()
-    const { phoneCodeHash: newPhoneCodeHash, timeout } = await req.tg.invoke(new Api.auth.ResendCode({
-      phoneNumber, phoneCodeHash }))
+    const result = await req.tg.invoke(new Api.auth.ResendCode({
+      phoneNumber, phoneCodeHash })) as any
+    const newPhoneCodeHash = result.phoneCodeHash
+    const timeout = result.timeout
     const session = req.tg.session.save()
     const accessToken = sign({ session }, API_JWT_SECRET, { expiresIn: '3h' })
     return res.cookie('authorization', `Bearer ${accessToken}`)
