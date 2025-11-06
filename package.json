@@ -14,7 +14,7 @@
     "server": "yarn workspace api",
     "api": "yarn workspace api",
     "build": "yarn workspaces run build",
-    "start": "cd api && node dist/index.js",
+    "start": "cd api && (npx prisma migrate deploy || npx prisma migrate resolve --applied 20220420012853_init) && node dist/index.js",
     "docs": "USE_SSH=true cd docs && yarn deploy"
   },
   "workspaces": [

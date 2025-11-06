@@ -57,9 +57,11 @@ import { prisma } from './model'
     await prisma.$connect()
     logger.info('Database connection verified')
     // Try to access users table to verify migrations ran
-    await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`.catch(() => {
-      logger.error('⚠️ WARNING: Database tables do not exist! Migrations may not have run.')
-      logger.error('⚠️ Please run: npx prisma migrate deploy')
+    await prisma.$queryRaw`SELECT 1 FROM users LIMIT 1`.catch(async (error: any) => {
+      logger.error('⚠️ CRITICAL: Database tables do not exist! Migrations may not have run.')
+      logger.error('⚠️ This should have been handled by entrypoint.sh or start script.')
+      logger.error('⚠️ Please check Railway logs for migration errors.')
+      logger.error('⚠️ Manual fix: cd api && npx prisma migrate deploy')
     })
   } catch (error: any) {
     logger.error('Database connection failed', { error: error?.message || String(error) })

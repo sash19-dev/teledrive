@@ -14,12 +14,19 @@ until npx prisma db execute --stdin <<<'SELECT 1' >/dev/null 2>&1; do
 done
 
 echo "✅ Database reachable! Running migrations..."
-cd /app/api || cd api
-npx prisma migrate deploy || {
-  echo "⚠️ Migration failed, trying to resolve..."
-  npx prisma migrate resolve --applied 20220420012853_init || true
-  npx prisma migrate deploy
+cd /app/api 2>/dev/null || cd api 2>/dev/null || true
+pwd
+echo "Running Prisma migrations..."
+npx prisma migrate deploy 2>&1 || {
+  echo "⚠️ First migration attempt failed, trying to resolve initial migration..."
+  npx prisma migrate resolve --applied 20220420012853_init 2>&1 || true
+  echo "Retrying migrations..."
+  npx prisma migrate deploy 2>&1 || {
+    echo "❌ Migrations failed! But continuing anyway..."
+  }
 }
+echo "Migration process completed (check logs above for errors)"
 
-echo "✅ Migrations completed! Starting the API..."
+echo "✅ Starting the API..."
+cd /app/api 2>/dev/null || cd api 2>/dev/null || true
 exec node dist/index.js
