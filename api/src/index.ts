@@ -77,41 +77,41 @@ app.set('trust proxy', 1)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"],
+      defaultSrc: ['\'self\''],
       scriptSrc: [
-        "'self'",
-        "'unsafe-inline'", // Required for React and inline scripts
-        "'unsafe-eval'", // Required for React development/build
-        "https:", // Allow external scripts
+        '\'self\'',
+        '\'unsafe-inline\'', // Required for React and inline scripts
+        '\'unsafe-eval\'', // Required for React development/build
+        'https:', // Allow external scripts
       ],
       styleSrc: [
-        "'self'",
-        "'unsafe-inline'", // Required for inline styles and React
-        "https:", // Allow external stylesheets
+        '\'self\'',
+        '\'unsafe-inline\'', // Required for inline styles and React
+        'https:', // Allow external stylesheets
       ],
       imgSrc: [
-        "'self'",
-        "data:", // Allow data URIs for images
-        "blob:", // Allow blob URIs
-        "https:", // Allow external images
+        '\'self\'',
+        'data:', // Allow data URIs for images
+        'blob:', // Allow blob URIs
+        'https:', // Allow external images
       ],
       fontSrc: [
-        "'self'",
-        "data:", // Allow data URIs for fonts
-        "https:", // Allow external fonts
+        '\'self\'',
+        'data:', // Allow data URIs for fonts
+        'https:', // Allow external fonts
       ],
       connectSrc: [
-        "'self'",
-        "https:", // Allow API calls to external domains
-        "wss:", // Allow WebSocket connections
-        "ws:", // Allow WebSocket connections
+        '\'self\'',
+        'https:', // Allow API calls to external domains
+        'wss:', // Allow WebSocket connections
+        'ws:', // Allow WebSocket connections
       ],
       mediaSrc: [
-        "'self'",
-        "blob:", // Allow blob URIs for media
-        "https:", // Allow external media
+        '\'self\'',
+        'blob:', // Allow blob URIs for media
+        'https:', // Allow external media
       ],
-      objectSrc: ["'none'"],
+      objectSrc: ['\'none\''],
       upgradeInsecureRequests: isProduction ? [] : null, // Only in production
     },
   },
